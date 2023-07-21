@@ -2,11 +2,6 @@ import serial
 import csv
 from collections import deque
 
-#first two bytes are constant according to: https://www.waveshare.com/wiki/D200_LiDAR_Kit#Communication_Protocol
-START = b'\x54'
-VER_LEN = b'\x2c'
-OUTPUT_FILE = 'D:\\Python\\D200-LiDAR-python\\testfile.csv'
-
 class Circle:
     def __init__(self):
         self.packet_list = []
@@ -30,13 +25,11 @@ class Circle:
             for datapoint in packet.datapoints:
                 yield datapoint
 
-    def export_csv(self):
-        global OUTPUT_FILE
-        with open(OUTPUT_FILE, "w", newline='') as f:
+    def export_csv(self, path):
+        with open(path, "w", newline='') as f:
             fieldnames = ['timestamp', 'angle', 'distance', 'signal']
             writer = csv.DictWriter(f, fieldnames, extrasaction='ignore')
-            # if len(f) == 0:
-            #     writer.writeheader()
+            writer.writeheader()
             for p in self.points():
                 writer.writerow(p.to_dict())
 
@@ -49,7 +42,7 @@ class Packet:
         self.complete = False
         self.datapoints_appended = 0
         self.raw_data = raw_data
-        if raw_data[0:1] == START and raw_data[1:2] == VER_LEN:
+        if raw_data[0:1] == Lidar.START_BYTE and raw_data[1:2] == Lidar.VER_LEN:
             self._decode()
         
     def __str__(self) -> str:
@@ -94,11 +87,15 @@ class Datapoint:
                 'signal' : self.signal_strength}
 
 class Lidar:
+    #first two bytes of packet are constant according to: https://www.waveshare.com/wiki/D200_LiDAR_Kit#Communication_Protocol
+    START_BYTE = b'\x54'
+    VER_LEN = b'\x2c'
+
     def __init__(self, port: str, baudrate=230400):
         self.port = port
         self.baudrate = baudrate
     
-    def capture_circle(self):
+    def capture_circle(self, path=None):
         with serial.Serial() as ser:
             ser.baudrate = self.baudrate
             ser.port = self.port
@@ -114,7 +111,7 @@ class Lidar:
                 #add it to the queue to watch for new packet starting sequence
                 last_two_bytes_received.append(x)
                 #after starting sequence is detected
-                if (last_two_bytes_received[0], last_two_bytes_received[1]) == (START, VER_LEN):
+                if (last_two_bytes_received[0], last_two_bytes_received[1]) == (Lidar.START_BYTE, Lidar.VER_LEN):
                     #and there are already some bytes recorded
                     if len(current_bytes) > 0:
                         #compose them into a Packet Object
@@ -134,9 +131,11 @@ class Lidar:
                         current_bytes += last_two_bytes_received[0]
                 #add a byte to the current bytearray
                 current_bytes += x
-        circles[1].export_csv()
+        if path is not None:
+            circles[1].export_csv(path)
+        return circles[1]
 
 
 if __name__ == "__main__":
     lidar = Lidar('COM4')
-    lidar.capture_circle()
+    lidar.capture_circle(path='D:\\Python\\D200-LiDAR-python\\testfile.csv')
